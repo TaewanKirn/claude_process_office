@@ -62,6 +62,10 @@
   #live { font-size: 12px; font-weight: 600; color: var(--live); display: flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 999px; background: rgba(142,224,107,.1); }
   #live i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: pulse 1.6s ease-in-out infinite; }
   #live.off { color: var(--red); background: rgba(255,122,138,.1); }
+  #sound { all: unset; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--dim); padding: 5px 11px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); white-space: nowrap; }
+  #sound:hover { color: var(--ink); border-color: var(--line-hi); }
+  #sound.on { color: var(--amber); background: rgba(255,205,117,.1); border-color: transparent; }
+  #sound.wait { color: var(--ink); border-color: var(--amber); }
   @keyframes pulse { 50% { opacity: .35; } }
   #stage {
     position: relative; overflow: hidden; cursor: grab; touch-action: none;
@@ -113,6 +117,7 @@
   <div id="topbar">
     <div class="lcd" id="lcd">-- F</div>
     <div class="where"><b id="floorName">사무실 준비 중…</b><small id="floorPath"></small></div>
+    <button id="sound" title="답변 완료·질문·권한 요청 때 효과음">🔈 소리 꺼짐</button>
     <div id="live"><i></i>LIVE</div>
   </div>
   <div id="stage">
@@ -969,6 +974,55 @@ $('zoom').addEventListener('click', (e) => {
   else zoomTo(layout().k + Number(z.dataset.z));
 });
 
+// ── 효과음: 답변 완료(done)는 올라가는 3음 차임, 사용자 입력 대기(ask: AskUserQuestion·권한 요청)는 묻는 듯한 2음 뿅뿅.
+// 브라우저는 클릭 전에 소리를 막으므로, 켜 둔 상태로 새로 열면 첫 클릭 때 소리가 살아난다.
+let actx = null;
+let soundOn = false;
+try { soundOn = localStorage.getItem('officeSound') === 'on'; } catch { /* 저장소 막힘 */ }
+function blip(t, f0, f1, dur, type, vol) {
+  const o = actx.createOscillator(); const g = actx.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(f0, t);
+  if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + dur * 0.6);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(actx.destination);
+  o.start(t); o.stop(t + dur + 0.02);
+}
+function chime(kind) {
+  if (!actx || actx.state !== 'running') return;
+  const t = actx.currentTime + 0.02;
+  if (kind === 'done') {
+    [1046.5, 1318.5, 1568].forEach((f, i) => blip(t + i * 0.085, f, f, 0.32, 'sine', 0.22));
+    blip(t + 0.255, 2093, 2093, 0.4, 'triangle', 0.06);
+  } else {
+    blip(t, 660, 990, 0.16, 'square', 0.05);
+    blip(t, 660, 990, 0.16, 'sine', 0.18);
+    blip(t + 0.2, 740, 1320, 0.24, 'square', 0.05);
+    blip(t + 0.2, 740, 1320, 0.24, 'sine', 0.18);
+  }
+}
+function paintSound() {
+  const b = $('sound');
+  const live = soundOn && actx && actx.state === 'running';
+  b.className = live ? 'on' : soundOn ? 'wait' : '';
+  b.textContent = live ? '🔔 소리 켜짐' : soundOn ? '🔔 클릭해서 소리 켜기' : '🔈 소리 꺼짐';
+}
+function unlockAudio() {
+  if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+  return actx.resume().then(paintSound);
+}
+$('sound').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const wasLive = soundOn && actx && actx.state === 'running';
+  soundOn = !wasLive;
+  try { localStorage.setItem('officeSound', soundOn ? 'on' : 'off'); } catch { /* 저장소 막힘 */ }
+  if (soundOn) unlockAudio().then(() => chime('done')); else paintSound();
+});
+if (soundOn) document.addEventListener('pointerdown', () => { unlockAudio(); }, { once: true });
+paintSound();
+
 // ── 시작
 buildFurniture();
 Promise.all([document.fonts.load('12px "Pretendard Variable"'), document.fonts.load('9px Galmuri9')]).finally(() => { drawBackground(); requestAnimationFrame(loop); });
@@ -976,6 +1030,7 @@ const es = new EventSource('/events');
 es.onopen = () => { $('live').className = ''; $('live').lastChild.textContent = 'LIVE'; };
 es.onerror = () => { $('live').className = 'off'; $('live').lastChild.textContent = 'OFFLINE'; };
 es.onmessage = (e) => { snap = JSON.parse(e.data); render(first); first = false; };
+es.addEventListener('cue', (e) => { const c = JSON.parse(e.data); if (soundOn) chime(c.kind); });
 </script>
 </body>
 </html>

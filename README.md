@@ -46,13 +46,26 @@ claude-office --no-open   # 브라우저를 열지 않는다
     "PostToolUse":        [{ "matcher": "*", "hooks": [{ "type": "command", "command": "/path/to/node", "args": ["/path/to/claude-office/bin/hook.js"], "async": true, "timeout": 5 }] }],
     "PostToolUseFailure": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "/path/to/node", "args": ["/path/to/claude-office/bin/hook.js"], "async": true, "timeout": 5 }] }],
     "SubagentStart":      [{ "matcher": "*", "hooks": [{ "type": "command", "command": "/path/to/node", "args": ["/path/to/claude-office/bin/hook.js"], "async": true, "timeout": 5 }] }],
-    "SubagentStop":       [{ "matcher": "*", "hooks": [{ "type": "command", "command": "/path/to/node", "args": ["/path/to/claude-office/bin/hook.js"], "async": true, "timeout": 5 }] }]
+    "SubagentStop":       [{ "matcher": "*", "hooks": [{ "type": "command", "command": "/path/to/node", "args": ["/path/to/claude-office/bin/hook.js"], "async": true, "timeout": 5 }] }],
+    "Stop":               [{ "hooks": [{ "type": "command", "command": "/path/to/node", "args": ["/path/to/claude-office/bin/hook.js"], "async": true, "timeout": 5 }] }],
+    "PermissionRequest":  [{ "matcher": "*", "hooks": [{ "type": "command", "command": "/path/to/node", "args": ["/path/to/claude-office/bin/hook.js"], "async": true, "timeout": 5 }] }]
   }
 }
 ```
 
 훅은 백그라운드로 돌아 도구 실행을 늦추지 않습니다. `live.jsonl`은 2MB를 넘으면 스스로 비웁니다.
 Claude Code 안에서 `/hooks`로 확인하거나 끌 수 있습니다.
+
+## 효과음
+
+상단의 소리 버튼을 누르면 켜집니다. 브라우저가 클릭 전에는 소리를 막기 때문에, 켜 둔 채 페이지를 새로 열면 화면을 한 번 클릭해야 소리가 납니다.
+
+| 소리 | 언제 | 훅 |
+|---|---|---|
+| 올라가는 3음 차임 | 답변을 마쳤을 때 | `Stop` |
+| 묻는 듯한 2음 뿅뿅 | `AskUserQuestion` 질문, 권한 요청 | `PreToolUse`(AskUserQuestion) · `PermissionRequest` |
+
+메인 세션에만 울리고 서브에이전트에는 울리지 않습니다.
 
 ## 폰트
 

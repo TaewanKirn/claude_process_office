@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Claude Code 세션 기록(~/.claude/projects/*/*.jsonl)을 tail해서 SSE(/events)로 브라우저에 보낸다.
 // 세션 기록은 도구가 끝난 뒤에 쓰이므로, 실행 중인 도구는 훅(bin/hook.js)이 남기는 live.jsonl 로 먼저 잡는다.
+// 같은 훅 기록의 Stop·PermissionRequest·AskUserQuestion 은 SSE 'cue' 이벤트로 보내 브라우저가 효과음을 낸다.
 const http = require('http');
 const fs = require('fs');
 const os = require('os');
@@ -235,7 +236,30 @@ let liveOffset = 0;
 let liveRest = '';
 try { liveOffset = fs.statSync(LIVE).size; } catch { /* 아직 훅이 한 번도 안 불렸다 */ }
 
+// 효과음 신호: 답변을 마치면 done, 사용자 입력을 기다리면(AskUserQuestion·권한 요청) ask.
+// AskUserQuestion 은 PreToolUse 와 PermissionRequest 가 함께 올 수 있어 같은 신호는 2초 안에 한 번만 보낸다.
+const lastCue = new Map(); // session id -> { kind, t }
+function cueOf(r) {
+  if (r.agent) return null;
+  if (r.ev === 'Stop') return { kind: 'done', text: '답변 완료' };
+  if (r.ev === 'PermissionRequest') return r.tool === 'AskUserQuestion' ? { kind: 'ask', text: '질문이 있어요' } : { kind: 'ask', text: `권한 요청: ${r.tool}` };
+  if (r.ev === 'PreToolUse' && r.tool === 'AskUserQuestion') return { kind: 'ask', text: '질문이 있어요' };
+  return null;
+}
+function cue(r) {
+  const c = cueOf(r);
+  if (!c) return;
+  const prev = lastCue.get(r.sid);
+  if (prev && prev.kind === c.kind && r.t - prev.t < 2000) return;
+  lastCue.set(r.sid, { kind: c.kind, t: r.t });
+  const s = byId.get(r.sid);
+  if (s) { pushLog(s, c.text); dirty = true; }
+  const data = `event: cue\ndata: ${JSON.stringify({ kind: c.kind, sid: r.sid, text: c.text, title: s ? (s.customTitle || s.aiTitle || s.title || s.short) : '' })}\n\n`;
+  for (const cl of clients) cl.write(data);
+}
+
 function applyLive(r) {
+  cue(r);
   const s = byId.get(r.sid);
   if (!s) return;
   s.last = Math.max(s.last, r.t);
