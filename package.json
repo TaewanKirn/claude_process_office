@@ -1,0 +1,8 @@
+{
+  "name": "claude-office",
+  "version": "0.1.0",
+  "description": "Claude Code 세션 기록(jsonl)을 tail해서 사무실 그림으로 보여주는 로컬 대시보드",
+  "bin": { "claude-office": "bin/claude-office.js" },
+  "files": ["bin", "public"],
+  "license": "MIT"
+}
