@@ -7,8 +7,8 @@ const path = require('path');
 
 const SETTINGS = path.join(os.homedir(), '.claude', 'settings.json');
 const HOOK = path.join(__dirname, 'hook.js');
-const EVENTS = ['PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'SubagentStart', 'SubagentStop', 'Stop', 'PermissionRequest'];
-const NO_MATCHER = new Set(['Stop']); // Stop 은 matcher 를 받지 않는다
+const EVENTS = ['PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'SubagentStart', 'SubagentStop', 'Stop', 'PermissionRequest', 'SessionEnd'];
+const NO_MATCHER = new Set(['Stop', 'SessionEnd']); // matcher 를 쓰지 않는 이벤트
 
 let settings = {};
 try { settings = JSON.parse(fs.readFileSync(SETTINGS, 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
@@ -19,7 +19,8 @@ for (const ev of EVENTS) {
   const groups = settings.hooks[ev] = settings.hooks[ev] || [];
   const has = groups.some((g) => (g.hooks || []).some((h) => (h.args || []).some((a) => a.endsWith(path.join('claude-office', 'bin', 'hook.js')) || a === HOOK)));
   if (has) continue;
-  const group = { hooks: [{ type: 'command', command: process.execPath, args: [HOOK], async: true, timeout: 5 }] };
+  // SessionEnd 는 종료 직전에 불려서 백그라운드로 돌리면 기록 전에 프로세스가 끝날 수 있다
+  const group = { hooks: [{ type: 'command', command: process.execPath, args: [HOOK], ...(ev === 'SessionEnd' ? {} : { async: true }), timeout: 5 }] };
   if (!NO_MATCHER.has(ev)) group.matcher = '*';
   groups.push(group);
   added.push(ev);

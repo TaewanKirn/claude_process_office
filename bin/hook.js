@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Claude Code 훅(PreToolUse·PostToolUse·SubagentStart·SubagentStop·Stop·PermissionRequest)이 부르는 기록기.
+// Claude Code 훅(PreToolUse·PostToolUse·SubagentStart·SubagentStop·Stop·PermissionRequest·SessionEnd)이 부르는 기록기.
 // 세션 기록 파일은 도구가 끝난 뒤에야 쓰이므로, 시작 시점을 ~/.claude-office/live.jsonl 에 따로 남긴다.
 const fs = require('fs');
 const os = require('os');

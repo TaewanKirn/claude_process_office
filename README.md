@@ -54,13 +54,20 @@ node bin/install-hooks.js
     "SubagentStart":      [{ "matcher": "*", "hooks": [{ "type": "command", "command": "/path/to/node", "args": ["/path/to/claude-office/bin/hook.js"], "async": true, "timeout": 5 }] }],
     "SubagentStop":       [{ "matcher": "*", "hooks": [{ "type": "command", "command": "/path/to/node", "args": ["/path/to/claude-office/bin/hook.js"], "async": true, "timeout": 5 }] }],
     "Stop":               [{ "hooks": [{ "type": "command", "command": "/path/to/node", "args": ["/path/to/claude-office/bin/hook.js"], "async": true, "timeout": 5 }] }],
-    "PermissionRequest":  [{ "matcher": "*", "hooks": [{ "type": "command", "command": "/path/to/node", "args": ["/path/to/claude-office/bin/hook.js"], "async": true, "timeout": 5 }] }]
+    "PermissionRequest":  [{ "matcher": "*", "hooks": [{ "type": "command", "command": "/path/to/node", "args": ["/path/to/claude-office/bin/hook.js"], "async": true, "timeout": 5 }] }],
+    "SessionEnd":         [{ "hooks": [{ "type": "command", "command": "/path/to/node", "args": ["/path/to/claude-office/bin/hook.js"], "timeout": 5 }] }]
   }
 }
 ```
 
-훅은 백그라운드로 돌아 도구 실행을 늦추지 않습니다. `live.jsonl`은 2MB를 넘으면 스스로 비웁니다.
+훅은 백그라운드로 돌아 도구 실행을 늦추지 않습니다. `SessionEnd`만 종료 직전에 기록을 끝내야 해서 백그라운드로 돌리지 않습니다. `live.jsonl`은 2MB를 넘으면 스스로 비웁니다.
 Claude Code 안에서 `/hooks`로 확인하거나 끌 수 있습니다.
+
+## 퇴근
+
+- 세션이 끝나면(`/exit`, `/clear`, 터미널 종료) `SessionEnd` 훅을 받아 엘리베이터로 퇴근합니다.
+- 훅 없이 끝난 세션이나 멈춘 서브에이전트는 오른쪽 카드의 **👋 퇴근** 버튼과 서브에이전트 칩의 ✕로 내보냅니다.
+- 퇴근한 세션은 `~/.claude-office/gone.json`에 남아 서버를 다시 켜도 돌아오지 않습니다. 그 세션에 새 메시지가 오면(재개) 다시 출근합니다.
 
 ## 효과음
 

@@ -16,6 +16,7 @@ const ROOT = path.join(HOME, '.claude', 'projects');
 // 데스크톱 앱 Cowork 세션은 세션마다 따로 둔 설정 폴더에 기록한다.
 const COWORK = path.join(HOME, 'Library', 'Application Support', 'Claude', 'local-agent-mode-sessions');
 const LIVE = path.join(HOME, '.claude-office', 'live.jsonl');
+const GONE_FILE = path.join(HOME, '.claude-office', 'gone.json'); // 퇴근한 세션 id -> 퇴근 시각. 서버를 다시 켜도 휴게실로 돌아오지 않게 남긴다
 const PUBLIC = path.join(__dirname, '..', 'public');
 const POLL_MS = 250;
 const DISCOVER_MS = 3000;
@@ -34,6 +35,12 @@ const ROOM_BY_TOOL = (name) => {
   if (name === 'AskUserQuestion') return 'desk';
   return 'dev';
 };
+
+// 퇴근: SessionEnd 훅(/exit·/clear·터미널 종료)이나 화면의 퇴근 버튼. 그 뒤에 새 메시지가 오면(재개) 다시 출근한다.
+let gone = {};
+try { gone = JSON.parse(fs.readFileSync(GONE_FILE, 'utf8')); } catch { /* 처음 */ }
+for (const [id, t] of Object.entries(gone)) if (Date.now() - t > RECENT_MS) delete gone[id];
+const saveGone = () => { try { fs.writeFileSync(GONE_FILE, JSON.stringify(gone)); } catch { /* 표시용이라 무시 */ } };
 
 const sessions = new Map(); // file -> state
 const byId = new Map(); // session id -> state
@@ -70,8 +77,26 @@ function dropSub(s, key) {
   dirty = true;
 }
 
+function dismiss(s, t, why) {
+  if (s.gone) return;
+  s.gone = t;
+  s.running.clear();
+  for (const key of [...s.subs.keys()]) dropSub(s, key);
+  gone[s.id] = t;
+  saveGone();
+  pushLog(s, `퇴근합니다! (${why})`);
+  dirty = true;
+}
+function rehire(s) {
+  s.gone = 0;
+  delete gone[s.id];
+  saveGone();
+  pushLog(s, '다시 출근했습니다');
+}
+
 function handle(s, obj) {
   if (obj.isSidechain) return;
+  if (s.gone && (obj.type === 'user' || obj.type === 'assistant') && Date.parse(obj.timestamp) > s.gone + 1000) rehire(s);
   if (obj.cwd) s.cwd = obj.cwd;
   if (obj.type === 'ai-title' && obj.aiTitle) { s.aiTitle = clip(obj.aiTitle, 40); dirty = true; return; }
   if (obj.type === 'custom-title' && obj.customTitle) { s.customTitle = clip(obj.customTitle, 40); dirty = true; return; }
@@ -138,7 +163,7 @@ function track(file, st) {
     file, id, short: id.slice(0, 6), project: path.basename(path.dirname(file)), cwd: '',
     title: '', room: 'dev', tool: '', bubble: null, last: 0,
     tools: new Map(), subs: new Map(), doneSubs: new Set(), agentKey: new Map(), metaSeen: new Map(),
-    live: new Set(), running: new Map(), offset: 0, rest: '',
+    live: new Set(), running: new Map(), offset: 0, rest: '', gone: gone[id] || 0,
   };
   sessions.set(file, s);
   byId.set(id, s);
@@ -193,6 +218,7 @@ function scanSubs(s, initial) {
       if (initial) s.doneSubs.add(key); else dropSub(s, key);
       continue;
     }
+    if (s.doneSubs.has(key)) continue; // 퇴근 버튼으로 내보낸 서브에이전트
     const sub = addSub(s, key, meta.agentType, meta.description, jst.mtimeMs);
     sub.agent = agentId;
     const seen = s.metaSeen.get(agentId);
@@ -261,7 +287,12 @@ function cue(r) {
 function applyLive(r) {
   cue(r);
   const s = byId.get(r.sid);
+  if (r.ev === 'SessionEnd' && !r.agent) {
+    if (s) dismiss(s, r.t, '세션 종료'); else { gone[r.sid] = r.t; saveGone(); }
+    return;
+  }
   if (!s) return;
+  if (s.gone && r.ev === 'PreToolUse' && r.t > s.gone + 1000) rehire(s);
   s.last = Math.max(s.last, r.t);
   const sum = /^(Read|Edit|Write|MultiEdit|NotebookEdit)$/.test(r.tool) ? path.basename(r.sum) : r.sum;
   const text = clip(sum ? `${r.tool} ${sum}` : r.tool, 70);
@@ -366,6 +397,7 @@ function snapshot() {
   const now = Date.now();
   const floors = new Map();
   for (const s of sessions.values()) {
+    if (s.gone) continue;
     for (const [id, t] of s.running) if (now - t > STALE_MS) s.running.delete(id);
     const idle = now - s.last > ACTIVE_MS && s.running.size === 0;
     const name = (s.cwd && path.basename(s.cwd)) || s.project;
@@ -390,6 +422,14 @@ function broadcast() {
 }
 
 const server = http.createServer((req, res) => {
+  if (req.method === 'POST' && req.url.startsWith('/dismiss?')) {
+    const q = new URL(req.url, 'http://x').searchParams;
+    const s = byId.get(q.get('sid'));
+    if (!s) return res.writeHead(404).end();
+    if (q.get('sub')) dropSub(s, q.get('sub')); else dismiss(s, Date.now(), '퇴근 버튼');
+    dirty = true;
+    return res.writeHead(204).end();
+  }
   if (req.url === '/events') {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
     res.write(`data: ${JSON.stringify(snapshot())}\n\n`);
